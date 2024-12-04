@@ -745,7 +745,7 @@ def get_supported_annotation(
 
     The third boolean element of the tuple indicates if default values should be validated.
 
-    This differs from the built in mapping by supporting a few more things.
+    This differs from the built-in mapping by supporting a few more things.
     Likewise, this returns a "transformed" annotation that is ready to use with CommandParameter.transform.
     """
 
@@ -768,8 +768,6 @@ def get_supported_annotation(
         if annotation is Choice:
             raise TypeError('Choice requires a type argument of int, str, or float')
 
-        # Check if a transform @classmethod is given to the class
-        # These flatten into simple "inline" transformers with implicit strings
         transform_classmethod = annotation.__dict__.get('transform', None)
         if isinstance(transform_classmethod, classmethod):
             params = inspect.signature(transform_classmethod.__func__).parameters
@@ -779,7 +777,6 @@ def get_supported_annotation(
                 raise TypeError('Inline transformer with transform classmethod must be a coroutine')
             return (InlineTransformer(annotation), MISSING, False)
 
-    # Check if there's an origin
     origin = getattr(annotation, '__origin__', None)
     if origin is Literal:
         args = annotation.__args__
@@ -790,7 +787,6 @@ def get_supported_annotation(
         return (ChoiceTransformer(arg), MISSING, True)
 
     if origin is not Union:
-        # Only Union/Optional is supported right now so bail early
         raise TypeError(f'unsupported type annotation {annotation!r}')
 
     default = MISSING
@@ -806,15 +802,14 @@ def get_supported_annotation(
             args = args[:-1]
             default = None
 
-    # Check for channel union types
+    # Custom check for user-defined converters
+    for arg in args:
+        if hasattr(arg, '__discord_converter__') or callable(getattr(arg, 'convert', None)):
+            return (arg, default, False)
+
     if any(arg in CHANNEL_TO_TYPES for arg in args):
-        # If any channel type is given, then *all* must be channel types
         return (UnionChannelTransformer(*args), default, True)
 
-    # The only valid transformations here are:
-    # [Member, User] => user
-    # [Member, User, Role] => mentionable
-    # [Member | User, Role] => mentionable
     supported_types: Set[Any] = {Role, Member, User}
     if not all(arg in supported_types for arg in args):
         raise TypeError(f'unsupported types given inside {annotation!r}')
